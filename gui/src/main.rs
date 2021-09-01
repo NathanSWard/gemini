@@ -1,5 +1,5 @@
 use async_tungstenite::tungstenite::Message;
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{Date, DateTime, Local, TimeZone};
 use futures_util::{SinkExt, StreamExt};
 use gemini::{
     rest::{
@@ -8,6 +8,7 @@ use gemini::{
     },
     symbol::Symbol,
 };
+use iced::{Application, Settings};
 use itertools::{Itertools, MinMaxResult::MinMax};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -21,26 +22,11 @@ fn to_local<Z: TimeZone>(date: DateTime<Z>) -> DateTime<Local> {
     date.with_timezone(&Local)
 }
 
-/*
-fn candle_stick_graph() -> egui::plot::Plot {
-    use egui::plot::{Line, Plot, Value, Values};
-    let n = 128;
-    let line = Line::new(Values::from_values_iter((0..=n).map(|i| {
-        use std::f64::consts::TAU;
-        let x = egui::remap(i as f64, 0.0..=(n as f64), -TAU..=TAU);
-        Value::new(x, x.sin())
-    })));
-    Plot::new("example_plot")
-        .line(line)
-        .height(32.0)
-        .data_aspect(1.0)
-}
-*/
-
 fn main() {
-    let app = gui::TemplateApp::default();
-    let native_options = eframe::NativeOptions::default();
-    eframe::run_native(Box::new(app), native_options);
+    gui::App::run(Settings {
+        ..Settings::default()
+    })
+    .unwrap();
 }
 
 /*

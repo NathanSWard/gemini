@@ -2,7 +2,6 @@ pub mod auction;
 pub mod change;
 pub mod trade;
 
-use super::heartbeat::Heartbeat;
 use serde::{Deserialize, Serialize};
 use typed_builder::TypedBuilder;
 
