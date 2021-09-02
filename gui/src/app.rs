@@ -51,7 +51,7 @@ impl<H: Hasher, I> iced_native::subscription::Recipe<H, I> for PollOB {
                             ws::market::MarketWssRequest::builder()
                                 .bids(true)
                                 .offers(true)
-                                .symbol(Symbol::BTCUSD)
+                                .symbol(Symbol::ETHUSD)
                                 .build(),
                         )
                         .await
@@ -101,7 +101,7 @@ pub enum Message {
 }
 
 pub struct App {
-    ob: crate::order_book::OrderBook,
+    ob: crate::order_book::OrderBookChart,
 }
 
 impl Application for App {

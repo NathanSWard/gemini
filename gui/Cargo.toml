@@ -13,6 +13,7 @@ plotters-iced = "0.1"
 plotters = "0.3"
 plotters-backend = "0.3"
 gemini = { version = "0.1", path = "../gemini" }
+market = { version = "0.1", path = "../market" }
 itertools = "0.10"
 tokio = { version = "1", features = ["full"] }
 async-tungstenite = { version = "0.14", features = ["tokio-runtime", "tokio-native-tls"] }

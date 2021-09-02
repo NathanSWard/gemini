@@ -1,52 +1,26 @@
 use crate::app::Message;
 use gemini::ws::market::{
     change::{Change, Side},
-    Event, Update,
+    Event,
 };
-use iced::{Align, Color, Length};
-use rust_decimal::Decimal;
+use iced::widget::container::StyleSheet;
+use iced::{Align, Background, Color, Length};
+use market::order_book::{OrderBook, OrderData};
 
-#[derive(Debug)]
-pub struct Order {
-    price: Decimal,
-    quantity: Decimal,
+#[derive(Default, Debug, Clone)]
+pub struct OrderBookChart {
+    book: OrderBook,
 }
 
-impl std::cmp::PartialEq for Order {
-    fn eq(&self, other: &Self) -> bool {
-        self.price.eq(&other.price)
-    }
-}
-
-impl std::cmp::Eq for Order {}
-
-impl std::cmp::PartialOrd for Order {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.price.partial_cmp(&other.price)
-    }
-}
-
-impl std::cmp::Ord for Order {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.price.cmp(&other.price)
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct OrderBook {
-    asks: Vec<Order>,
-    bids: Vec<Order>,
-}
-
-impl OrderBook {
+impl OrderBookChart {
     fn order_row<'a, C: Into<Color> + Clone>(
-        orders: impl Iterator<Item = &'a Order>,
+        orders: impl Iterator<Item = &'a OrderData>,
         color: C,
     ) -> impl std::iter::Iterator<Item = iced::Element<'a, Message>> {
         orders.map(move |order| {
             iced::Text::new(format!(
-                "Price: `{:?}` Quantity: `{:?}`",
-                order.price, order.quantity
+                "Price: `{}` Quantity: `{}`",
+                order.price.0, order.quantity.0
             ))
             .color(color.clone())
             .into()
@@ -54,24 +28,53 @@ impl OrderBook {
     }
 
     pub fn view(&mut self) -> iced::Element<'_, Message> {
-        let asks = Self::order_row(self.asks.iter().take(10), Color::from_rgb8(231, 76, 60));
-        let bids = Self::order_row(self.bids.iter().take(10), Color::from_rgb8(40, 180, 99));
+        fn make_column<'a>(
+            data: impl Iterator<Item = &'a OrderData>,
+            color: Color,
+        ) -> iced::Column<'a, Message> {
+            let make_container = |text, color, align_x| {
+                iced::Container::new(iced::Text::new(text).color(color))
+                    .align_x(align_x)
+                    .align_y(Align::Center)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+            };
 
-        let mut asks_column = iced::Column::new()
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_items(Align::Center);
-        for ask in asks {
-            asks_column = asks_column.push(ask);
+            let mut column = iced::Column::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_items(Align::Center);
+
+            for order_data in data {
+                let row = iced::Row::new()
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_items(Align::Center)
+                    .push(make_container(
+                        format!("{}", order_data.price.0),
+                        color,
+                        Align::Start,
+                    ))
+                    .push(make_container(
+                        format!("{}", order_data.quantity.0),
+                        color,
+                        Align::End,
+                    ));
+                column = column.push(row);
+            }
+
+            column
         }
 
-        let mut bids_column = iced::Column::new()
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_items(Align::Center);
-        for bid in bids {
-            bids_column = bids_column.push(bid);
-        }
+        let asks_column = make_column(
+            self.book.iter_asks().take(10),
+            Color::from_rgb8(231, 76, 60),
+        );
+
+        let bids_column = make_column(
+            self.book.iter_bids().take(10),
+            Color::from_rgb8(40, 180, 99),
+        );
 
         iced::Row::new()
             .width(Length::Fill)
@@ -82,65 +85,29 @@ impl OrderBook {
             .into()
     }
 
-    fn add_change(&mut self, change: Change) {
-        let vec = match change.side {
-            Side::Ask => &mut self.asks,
-            Side::Bid => &mut self.bids,
-        };
-
-        vec.push(Order {
-            price: change.price,
-            quantity: change.remaining,
-        });
-    }
-
-    fn update_change(&mut self, change: Change) {
-        let orders = match change.side {
-            Side::Ask => &mut self.asks,
-            Side::Bid => &mut self.bids,
-        };
-
-        let price = change.price;
-        match orders
-            .iter_mut()
-            .enumerate()
-            .find(|(_, o)| o.price == price)
-        {
-            Some((idx, order)) => {
-                if change.remaining.is_zero() {
-                    orders.remove(idx);
-                } else {
-                    order.quantity = change.remaining;
-                }
-            }
-            None => orders.push(Order {
-                price: change.price,
-                quantity: change.remaining,
-            }),
-        }
-    }
-
     pub fn update(&mut self, message: Message) {
+        let mut update_order_book = |change: Change| {
+            let data = OrderData::new(change.price, change.remaining);
+            match change.side {
+                Side::Ask => self.book.update_asks(data),
+                Side::Bid => self.book.update_bids(data),
+            }
+        };
+
         match message {
             Message::Init(update) => {
                 for event in update.events {
                     if let Event::Change(change) = event {
-                        self.add_change(change);
+                        update_order_book(change);
                     }
                 }
-                println!("bids: {}, asks: {}", self.bids.len(), self.asks.len());
             }
             Message::Change(update) => {
                 for change in update.events {
-                    self.update_change(change);
+                    update_order_book(change);
                 }
             }
             _ => {}
         }
-
-        // TODO: don't always sort.
-        // Use a better data structure
-        self.asks.sort_unstable();
-        self.bids.sort_unstable_by(|o1, o2| o2.cmp(o1));
     }
 }
