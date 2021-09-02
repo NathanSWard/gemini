@@ -27,7 +27,7 @@ pub struct Auction {
     pub timestamp: DateTime<Utc>,
 
     pub auction_id: u32,
-    pub eid: u32,
+    pub eid: u64,
     pub event_type: EventType,
 
     #[serde(flatten)]

@@ -14,7 +14,7 @@ pub struct Trade {
     #[serde(rename = "type")]
     ty: tag::Trade,
     pub symbol: Symbol,
-    pub event_id: u32,
+    pub event_id: u64,
     #[serde(with = "ts_milliseconds")]
     pub timestamp: DateTime<Utc>,
     pub price: Decimal,

@@ -7,6 +7,8 @@ use async_tungstenite::{
 };
 use reqwest::Url;
 
+pub type WssStream = WebSocketStream<ConnectStream>;
+
 pub async fn connect_wss_with_request(
     url: Url,
     req: impl WssRequest,
@@ -14,27 +16,8 @@ pub async fn connect_wss_with_request(
     connect_async(req.url(url)).await
 }
 
-pub struct Client {
-    inner: WebSocketStream<ConnectStream>,
-}
-
-impl Deref for Client {
-    type Target = WebSocketStream<ConnectStream>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl DerefMut for Client {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-pub async fn connect_wss(url: Url) -> Result<(Client, Response), Error> {
-    connect_async(url)
-        .await
-        .map(|(wss, resp)| (Client { inner: wss }, resp))
+pub async fn connect_wss(url: Url) -> Result<(WebSocketStream<ConnectStream>, Response), Error> {
+    connect_async(url).await
 }
 
 pub trait WssRequest: Sized {

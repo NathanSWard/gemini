@@ -22,7 +22,7 @@ pub struct AuctionOpen {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AuctionData {
-    pub eid: u32,
+    pub eid: u64,
     #[serde(rename = "time_ms", with = "ts_milliseconds")]
     pub timestamp: DateTime<Utc>,
     pub highest_bid_price: Option<Decimal>,

@@ -21,14 +21,14 @@ pub enum Event {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct Update {
-    socket_sequence: u32,
+pub struct Update<E = Event> {
+    pub socket_sequence: u64,
     #[serde(rename = "eventId")]
-    event_id: u32,
+    pub event_id: u64,
     // TODO: this doesn't exist??
     // #[serde(rename = "timestampms", with = "ts_milliseconds")]
     // timestamp: DateTime<Utc>,
-    events: Vec<Event>,
+    pub events: Vec<E>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
