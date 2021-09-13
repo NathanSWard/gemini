@@ -1,4 +1,4 @@
-use crate::decimal::DecimalRange;
+use crate::decimal::*;
 use async_tungstenite::tungstenite;
 use chrono::{Date, DateTime, Duration, Local, TimeZone, Utc};
 use futures_util::{SinkExt, StreamExt};
@@ -6,17 +6,19 @@ use gemini::{
     symbol::Symbol,
     ws::{
         self,
-        market::{change::Change, Event, Update},
+        marketv2::{l2::*, trade::Trade},
     },
 };
 use iced::{
     executor, Align, Application, Clipboard, Column, Command, Container, Element, Font, Length,
     Settings, Subscription,
 };
+use itertools::Itertools;
+use market::stats::Stats;
 use plotters::{prelude::*, style::IntoFont};
 use plotters_iced::{Chart, ChartWidget};
 use reqwest::header::InvalidHeaderName;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use std::hash::Hasher;
 use std::sync::{Arc, Mutex};
@@ -46,31 +48,40 @@ impl<H: Hasher, I> iced_native::subscription::Recipe<H, I> for PollOB {
             |state| async move {
                 match state {
                     State::Start => {
-                        let (mut stream, _) = gemini::ws::client::connect_wss_with_request(
-                            reqwest::Url::parse("wss://api.gemini.com").unwrap(),
-                            ws::market::MarketWssRequest::builder()
-                                .bids(true)
-                                .offers(true)
-                                .symbol(Symbol::ETHUSD)
-                                .build(),
+                        let (mut stream, _) = gemini::ws::client::connect_wss(
+                            reqwest::Url::parse("wss://api.gemini.com/v2/marketdata").unwrap(),
                         )
                         .await
                         .unwrap();
 
-                        let update = match stream.next().await {
+                        let req = ws::marketv2::Subscribe::builder()
+                            .subscriptions(vec![ws::marketv2::Subscription::builder()
+                                .name(ws::marketv2::SubscriptionType::L2)
+                                .symbols(vec![Symbol::BTCUSD])
+                                .build()])
+                            .build();
+                        stream
+                            .send(tungstenite::Message::Text(
+                                serde_json::to_string(&req).unwrap(),
+                            ))
+                            .await
+                            .unwrap();
+
+                        let initial = match stream.next().await {
                             Some(Ok(tungstenite::Message::Text(text))) => {
-                                serde_json::from_str::<gemini::ws::market::Update>(&text).unwrap()
+                                serde_json::from_str::<gemini::ws::marketv2::l2::L2Initial>(&text)
+                                    .unwrap()
                             }
                             Some(e) => panic!("{:?}", e),
                             None => panic!("AHH"),
                         };
 
-                        Some((Message::Init(update), State::Polling(stream)))
+                        Some((Message::Init(initial), State::Polling(stream)))
                     }
                     State::Polling(mut stream) => match stream.next().await {
                         Some(Ok(tungstenite::Message::Text(text))) => {
-                            if let Ok(change) = serde_json::from_str(&text) {
-                                Some((Message::Change(change), State::Polling(stream)))
+                            if let Ok(trade) = serde_json::from_str(&text) {
+                                Some((Message::Trade(trade), State::Polling(stream)))
                             } else {
                                 Some((Message::Other(text), State::Polling(stream)))
                             }
@@ -95,13 +106,13 @@ fn parse_time(t: &str) -> Date<Local> {
 #[derive(Debug)]
 pub enum Message {
     Waiting,
-    Init(Update),
-    Change(Update<Change>),
+    Init(ws::marketv2::l2::L2Initial),
+    Trade(ws::marketv2::trade::Trade),
     Other(String),
 }
 
 pub struct App {
-    ob: crate::order_book::OrderBookChart,
+    ob: StatsChart,
 }
 
 impl Application for App {
@@ -146,6 +157,133 @@ impl Application for App {
     }
 }
 
+#[derive(Debug)]
+pub struct MeanDate {
+    mean: Decimal,
+    date: DateTime<Utc>,
+    stddev: Decimal,
+}
+
+#[derive(Default, Debug)]
+pub struct StatsChart {
+    price: Decimal,
+    curr: Stats<Decimal>,
+    devs: Vec<Decimal>,
+    data: Vec<MeanDate>,
+}
+
+impl StatsChart {
+    pub fn view(&mut self) -> iced::Element<'_, Message> {
+        ChartWidget::new(self)
+            .width(Length::Units(800))
+            .height(Length::Units(800))
+            .into()
+    }
+
+    pub fn update(&mut self, message: Message) {
+        let mut add_trade = |trade: Trade| {
+            self.price = trade.price;
+            self.curr.add(trade.price);
+            self.data.push(MeanDate {
+                mean: self.curr.mean(),
+                date: trade.timestamp,
+                stddev: self.curr.stddev(),
+            });
+        };
+
+        match message {
+            Message::Init(mut init) => {
+                for trade in init
+                    .trades
+                    .drain(..)
+                    .sorted_by(|a, b| a.timestamp.cmp(&b.timestamp))
+                {
+                    add_trade(trade);
+                }
+            }
+            Message::Trade(trade) => {
+                add_trade(trade);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Chart<Message> for StatsChart {
+    fn build_chart<DB: DrawingBackend>(&self, mut builder: ChartBuilder<'_, '_, DB>) {
+        if self.data.len() <= 1 {
+            return;
+        }
+
+        let (from_date, to_date) = match self.data.iter().map(|data| data.date).minmax() {
+            itertools::MinMaxResult::MinMax(min, max) => (min, max),
+            _ => panic!("ahh"),
+        };
+
+        let from_price = self
+            .data
+            .iter()
+            .map(|data| data.mean - data.stddev)
+            .min()
+            .unwrap();
+        let to_price = self
+            .data
+            .iter()
+            .map(|data| data.mean + data.stddev)
+            .max()
+            .unwrap();
+
+        let std = self.curr.stddev() * dec!(2);
+
+        let mut chart = builder
+            .caption(
+                format!("Current Price: {}", self.price.round_dp(2)),
+                ("sans-serif", 50.0).into_font(),
+            )
+            .x_label_area_size(30)
+            .y_label_area_size(30)
+            .build_cartesian_2d(
+                from_date..to_date,
+                DecimalRange {
+                    start: from_price.floor() - std,
+                    end: to_price.ceil() + std,
+                },
+            )
+            .unwrap();
+
+        chart
+            .configure_mesh()
+            .light_line_style(&WHITE)
+            .draw()
+            .unwrap();
+
+        chart
+            .draw_series(LineSeries::new(
+                self.data.iter().map(|s| (s.date, s.mean)),
+                &BLUE,
+            ))
+            .unwrap();
+
+        chart
+            .draw_series(LineSeries::new(
+                self.data
+                    .iter()
+                    .map(|data| (data.date, data.mean + data.stddev)),
+                &GREEN,
+            ))
+            .unwrap();
+
+        chart
+            .draw_series(LineSeries::new(
+                self.data
+                    .iter()
+                    .map(|data| (data.date, data.mean - data.stddev)),
+                &RED,
+            ))
+            .unwrap();
+    }
+}
+
 /*
 struct CandleChart;
 
@@ -163,7 +301,6 @@ impl Chart<Message> for CandleChart {
         &self,
         mut builder: plotters_iced::ChartBuilder<'_, '_, DB>,
     ) {
-
         let mut chart = builder
             .caption("Candle Chart", ("sans-serif", 50.0).into_font())
             .x_label_area_size(30)

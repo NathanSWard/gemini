@@ -14,14 +14,6 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::convert::TryFrom;
 
-fn dec_to_f32(dec: Decimal) -> f32 {
-    f32::try_from(dec).unwrap()
-}
-
-fn to_local<Z: TimeZone>(date: DateTime<Z>) -> DateTime<Local> {
-    date.with_timezone(&Local)
-}
-
 fn main() {
     gui::App::run(Settings {
         ..Settings::default()

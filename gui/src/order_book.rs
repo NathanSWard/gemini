@@ -94,6 +94,7 @@ impl OrderBookChart {
             }
         };
 
+        /*
         match message {
             Message::Init(update) => {
                 for event in update.events {
@@ -109,5 +110,6 @@ impl OrderBookChart {
             }
             _ => {}
         }
+        */
     }
 }

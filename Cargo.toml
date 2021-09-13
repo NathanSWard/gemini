@@ -1,2 +1,2 @@
 [workspace]
-members = ["gemini/", "gui/", "market/"]
+members = ["gemini/", "gui/", "market/", "crypto-crab/"]
