@@ -1,4 +1,4 @@
-use rust_decimal::Decimal;
+use crate::decimal::Decimal;
 
 #[derive(Debug, Clone)]
 pub struct Candle {
@@ -6,4 +6,5 @@ pub struct Candle {
     pub high: Decimal,
     pub low: Decimal,
     pub close: Decimal,
+    pub volume: Decimal,
 }
